@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="AI 观点审计器">
+    <title>AI Reasoning Auditor</title>
+    <link rel="stylesheet" href="/static/style.css?v=9">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">RA</div>
+        <div>
+        <p class="eyebrow">REASONING AUDITOR</p>
+        <h1>AI 观点审计器</h1>
+        <p class="tagline">把漂亮结论拆成可验证的声明链。</p>
+        </div>
+      </div>
+      <div class="service-state" id="service-state" aria-live="polite">
+        <span class="state-dot" aria-hidden="true"></span>
+        <span>服务检查中</span>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="input-panel" aria-labelledby="input-title">
+        <div class="onboarding" id="onboarding">
+          <span class="onboarding-label">首次使用</span>
+          <span>Mock 无需配置；真实模型由本机后端代为请求。它不替你判真伪，而是指出哪里需要验证。</span>
+          <button class="inline-link" id="open-provider-settings" type="button">配置模型</button>
+          <button class="icon-button" id="dismiss-onboarding" type="button" aria-label="关闭首次使用提示">×</button>
+        </div>
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">INPUT</p>
+            <h2 id="input-title">待审计观点</h2>
+          </div>
+          <button class="text-button" id="clear-button" type="button">清空</button>
+        </div>
+        <textarea id="opinion" maxlength="100000" spellcheck="false">SEO 正在死亡，企业应该转向 ABM。</textarea>
+        <div class="input-meta"><span>支持观点、策略判断或技术选型结论</span><span id="character-count">22 / 100,000</span></div>
+        <div class="controls">
+          <label>
+            <span>Provider</span>
+            <select id="provider">
+              <option value="mock">Mock（本地演示）</option>
+              <option value="openai-compatible">OpenAI-Compatible（后端代理）</option>
+            </select>
+          </label>
+          <div class="analysis-option">
+            <div class="option-row">
+              <div class="option-copy">
+                <strong>检查替代解释</strong>
+                <span>避免把一个现象过早归因于单一原因</span>
+              </div>
+              <label class="switch" title="开启或关闭替代解释分析">
+                <input id="include-alternatives" type="checkbox" checked>
+                <span aria-hidden="true"></span>
+                <span class="sr-only">检查替代解释</span>
+              </label>
+            </div>
+            <details class="alternative-help">
+              <summary>它具体做什么？</summary>
+              <div class="alternative-example">
+                <span><b>观察</b> 自然流量下降</span>
+                <span aria-hidden="true">→</span>
+                <span><b>其他可能</b> 季节性、算法更新、网站改版</span>
+              </div>
+              <p>系统会为每个可能原因给出排除方法、所需数据和验证成本。它不反驳原观点，只检查是否存在同样说得通的普通解释。</p>
+              <p class="call-cost">开启后增加 1 次模型调用；关闭不影响声明图和承重假设分析。</p>
+            </details>
+          </div>
+        </div>
+        <button class="provider-summary" id="edit-provider-settings" type="button">
+          <span><strong>模型设置</strong><small id="provider-summary-text">Mock · 本地演示</small></span>
+          <span aria-hidden="true">设置 →</span>
+        </button>
+        <button class="primary-button" id="audit-button" type="button">
+          <span class="button-icon" aria-hidden="true">↗</span>
+          <span>开始审计</span><kbd>Ctrl ↵</kbd>
+        </button>
+        <div class="privacy-note"><span aria-hidden="true">●</span><span id="privacy-note-text">Mock 在本地运行，不发送 API Key。</span></div>
+        <div class="error-wrap" id="error-wrap" hidden>
+          <p class="error-message" id="error-message" role="alert"></p>
+          <button class="retry-button" id="retry-button" type="button">使用当前配置重试</button>
+        </div>
+      </section>
+
+      <dialog class="provider-settings" id="provider-settings">
+        <div class="dialog-heading">
+          <div><p class="section-kicker">PROVIDER</p><h2>配置 AI 模型</h2></div>
+          <button class="dialog-close" id="close-provider-settings" type="button" aria-label="关闭模型设置">×</button>
+        </div>
+          <div class="provider-help" id="config-hint">请求由本机后端转发到供应商，不会让浏览器直接连接供应商。</div>
+          <label>
+            <span>常用供应商</span>
+            <select id="provider-preset">
+              <option value="custom">自定义兼容接口</option>
+              <option value="openai">OpenAI</option>
+              <option value="deepseek">DeepSeek</option>
+              <option value="openrouter">OpenRouter</option>
+            </select>
+          </label>
+          <label>
+            <span>API Key <small class="field-note">不保存</small></span>
+            <input id="api-key" type="password" autocomplete="off" placeholder="留空则使用服务端环境变量">
+          </label>
+          <label>
+            <span>Base URL <small class="field-note">API 根地址</small></span>
+            <input id="base-url" type="url" placeholder="https://api.openai.com/v1">
+          </label>
+          <label>
+            <span>Model</span>
+            <input id="model" type="text" placeholder="gpt-4o-mini">
+          </label>
+          <label>
+            <span>Timeout（秒）</span>
+            <input id="timeout" type="number" min="1" max="300" value="60">
+          </label>
+        <div class="dialog-actions">
+          <button class="secondary-button" id="cancel-provider-settings" type="button">取消</button>
+          <button class="secondary-button" id="save-provider-settings" type="button">应用设置</button>
+        </div>
+      </dialog>
+
+      <section class="report-panel" aria-labelledby="report-title">
+        <div class="section-heading report-heading">
+          <div>
+            <p class="section-kicker">REPORT</p>
+            <h2 id="report-title">审计结果</h2>
+          </div>
+          <div class="view-switch" role="tablist" aria-label="报告视图">
+            <button class="view-tab is-active" data-view="structured" role="tab" aria-selected="true" type="button"><span>结构化</span><small>阅读</small></button>
+            <button class="view-tab" data-view="markdown" role="tab" aria-selected="false" type="button"><span>Markdown</span><small>分享</small></button>
+            <button class="view-tab" data-view="json" role="tab" aria-selected="false" type="button"><span>JSON</span><small>集成</small></button>
+          </div>
+        </div>
+        <div class="report-status" id="report-status">输入观点后开始审计</div>
+        <div class="audit-progress" id="audit-progress" hidden aria-live="polite">
+          <div class="progress-head"><strong id="progress-current">准备审计</strong><span id="progress-elapsed">0.0s</span></div>
+          <div class="progress-track"><span id="progress-bar"></span></div>
+          <ol class="progress-steps" id="progress-steps"></ol>
+        </div>
+        <div id="structured-view" class="structured-view empty-state">
+          <div class="empty-icon" aria-hidden="true">⌁</div>
+          <strong>等待审计</strong>
+          <span>结果会在这里按声明、推理链、承重假设和验证步骤呈现，不给虚假置信度。</span>
+        </div>
+        <section id="markdown-view" class="artifact-view" hidden>
+          <div class="artifact-toolbar">
+            <div><strong>可分享报告</strong><span>适合复制到文档、Issue 或评审记录</span></div>
+            <div class="toolbar-actions">
+              <button class="secondary-button" data-copy="markdown" type="button">复制 Markdown</button>
+              <button class="secondary-button" data-download="markdown" type="button">下载 .md</button>
+            </div>
+          </div>
+          <pre id="markdown-source" class="markdown-document"></pre>
+        </section>
+        <section id="json-view" class="artifact-view" hidden>
+          <div class="artifact-toolbar">
+            <div><strong>机器可读数据</strong><span>适合 API、自动化流程或前端集成</span></div>
+            <div class="toolbar-actions">
+              <button class="secondary-button" data-copy="json" type="button">复制 JSON</button>
+              <button class="secondary-button" data-download="json" type="button">下载 .json</button>
+            </div>
+          </div>
+          <div id="json-tree" class="json-tree"></div>
+        </section>
+      </section>
+    </main>
+
+    <script src="/static/app.js?v=9" defer></script>
+  </body>
+</html>
