@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="AI 观点审计器">
     <title>AI Reasoning Auditor</title>
-    <link rel="stylesheet" href="/static/style.css?v=11">
+    <link rel="stylesheet" href="/static/style.css?v=12">
   </head>
   <body>
     <header class="topbar">
@@ -103,8 +103,15 @@
             </select>
           </label>
           <label>
+            <span>Key 来源</span>
+            <select id="credential-mode">
+              <option value="server">服务端 Key（推荐公共部署）</option>
+              <option value="byok">本次使用我的 Key（BYOK）</option>
+            </select>
+          </label>
+          <label>
             <span>API Key <small class="field-note">不保存</small></span>
-            <input id="api-key" type="password" autocomplete="off" placeholder="留空则使用服务端环境变量">
+            <input id="api-key" type="password" autocomplete="off" placeholder="BYOK 模式填写你自己的供应商 Key">
           </label>
           <label>
             <span>RA 访问令牌 <small class="field-note">仅公共部署需要</small></span>
@@ -174,6 +181,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=11" defer></script>
+    <script src="/static/app.js?v=12" defer></script>
   </body>
 </html>

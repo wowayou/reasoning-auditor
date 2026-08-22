@@ -93,6 +93,7 @@ Provider 使用 Chat Completions 的 `POST /chat/completions` 协议，并对响
 ### API Key 安全边界
 
 - 真实 Provider 的 API Key 必须由你在所选供应商控制台创建（例如 OpenAI、DeepSeek 或 OpenRouter）；RA 不提供、生成或代管供应商 Key。Mock 模式不需要任何供应商 Key。
+- Web UI 提供两种凭据模式：`服务端 Key` 使用部署环境中的 `OPENAI_API_KEY`；`BYOK`（Bring Your Own Key）使用你本次输入的供应商 Key。BYOK 适合本地或受信任部署，公共部署默认关闭。
 - 临时 Key 只随当前请求发送，服务端只在请求和 Provider 生命周期内使用，不写入数据库、文件、Cookie、localStorage、任务状态或报告。
 - 成功后前端立即清空 Key；失败时仅保留当前页面输入，方便修正后重试；切换回 Mock 会立即清空。
 - `/api/health` 只返回是否配置，不返回 Key；HTTP 错误中的供应商回显会做脱敏。

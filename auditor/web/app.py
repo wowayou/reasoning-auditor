@@ -23,7 +23,7 @@ from auditor.render import JSONReportRenderer, MarkdownReportRenderer
 
 
 STATIC_DIR = Path(__file__).parent / "static"
-WEB_BUILD = 11
+WEB_BUILD = 12
 
 
 def _env_flag(name: str, default: bool) -> bool:
@@ -45,10 +45,16 @@ class AuditRequest(BaseModel):
     text: str = Field(min_length=1, max_length=100_000)
     provider: Literal["mock", "openai-compatible"] = "mock"
     include_alternatives: bool = True
+    credential_mode: Literal["server", "byok"] | None = None
     api_key: SecretStr | None = Field(default=None, max_length=500, repr=False)
     base_url: str | None = Field(default=None, max_length=2_000)
     model: str | None = Field(default=None, max_length=200)
     timeout: float = Field(default=60.0, gt=0, le=300)
+
+
+def _credential_mode(request: AuditRequest) -> Literal["server", "byok"]:
+    """Resolve omitted mode for clients from before explicit BYOK support."""
+    return request.credential_mode or ("byok" if request.api_key else "server")
 
 
 def create_app() -> FastAPI:
@@ -106,12 +112,21 @@ def create_app() -> FastAPI:
     }
 
     def validate_provider_configuration(request: AuditRequest) -> None:
-        if request.provider == "openai-compatible" and not allow_transient_provider_config:
-            if request.api_key or request.base_url or request.model:
+        if request.provider != "openai-compatible":
+            return
+        mode = _credential_mode(request)
+        if mode == "byok":
+            if not allow_transient_provider_config:
                 raise ValueError(
-                    "临时 Provider 配置已关闭；请使用 Mock，或在服务端设置 OPENAI_API_KEY、"
-                    "OPENAI_BASE_URL 和 OPENAI_MODEL"
+                    "BYOK 已关闭（临时 Provider 配置已关闭）；请切换到服务端 Key，"
+                    "或在部署中开启 AUDITOR_ALLOW_TRANSIENT_PROVIDER_CONFIG"
                 )
+            if not request.api_key:
+                raise ValueError("BYOK 模式需要填写你自己的供应商 API Key")
+        elif request.api_key or request.base_url or request.model:
+            raise ValueError(
+                "服务端 Key 模式不会接收浏览器 API Key、Base URL 或 Model；请切换到 BYOK"
+            )
 
     def execute_audit(
         request: AuditRequest,
@@ -137,14 +152,17 @@ def create_app() -> FastAPI:
                 on_stage_update(stages)
 
         validate_provider_configuration(request)
+        credential_mode = _credential_mode(request)
 
         provider = (
             DemoMockProvider()
             if request.provider == "mock"
             else OpenAICompatibleProvider(
-                api_key=request.api_key.get_secret_value() if request.api_key else None,
-                base_url=request.base_url,
-                model=request.model,
+                api_key=(request.api_key.get_secret_value() if request.api_key else None)
+                if credential_mode == "byok"
+                else None,
+                base_url=request.base_url if credential_mode == "byok" else None,
+                model=request.model if credential_mode == "byok" else None,
                 timeout=request.timeout,
             )
         )
@@ -191,6 +209,7 @@ def create_app() -> FastAPI:
             },
             "transient_provider_config_allowed": allow_transient_provider_config,
             "access_token_required": bool(access_token),
+            "byok_allowed": allow_transient_provider_config,
         }
 
     @app.post("/api/audit")

@@ -20,6 +20,7 @@ const jsonTree = document.querySelector("#json-tree");
 const onboarding = document.querySelector("#onboarding");
 const providerSettings = document.querySelector("#provider-settings");
 const apiKey = document.querySelector("#api-key");
+const credentialMode = document.querySelector("#credential-mode");
 const accessToken = document.querySelector("#access-token");
 const baseUrl = document.querySelector("#base-url");
 const model = document.querySelector("#model");
@@ -30,7 +31,7 @@ const characterCount = document.querySelector("#character-count");
 const providerSummaryText = document.querySelector("#provider-summary-text");
 const privacyNoteText = document.querySelector("#privacy-note-text");
 let latestArtifacts = { markdown: "", json: "" };
-const EXPECTED_WEB_BUILD = 11;
+const EXPECTED_WEB_BUILD = 12;
 let transientProviderConfigAllowed = true;
 let accessTokenRequired = false;
 let progressTimer = null;
@@ -139,17 +140,26 @@ const providerPresets = {
 
 function updateProviderHint() {
   const configured = provider.value === "openai-compatible";
+  const byok = credentialMode.value === "byok";
   configHint.textContent = configured
-    ? (transientProviderConfigAllowed
-      ? "请求由本机后端转发到供应商。Key 只在本次请求的内存生命周期内使用；成功后清空，失败时保留以便重试。"
-      : "当前服务已关闭浏览器临时 Provider 配置，请在服务端设置 OPENAI_API_KEY、OPENAI_BASE_URL 和 OPENAI_MODEL。")
+    ? (byok
+      ? (transientProviderConfigAllowed
+        ? "BYOK：使用你自己的供应商 Key。本次请求由本机后端转发，Key 不写入存储、任务状态或报告。"
+        : "当前部署已关闭 BYOK，请切换到服务端 Key。")
+      : "服务端 Key：浏览器不会发送供应商 API Key，由服务启动环境变量提供。")
     : "Mock 完全离线运行，不需要 API Key。";
   const presetLabel = providerPreset.options[providerPreset.selectedIndex]?.text || "自定义";
   const modelLabel = model.value.trim() || model.placeholder || "未指定模型";
   providerSummaryText.textContent = configured ? `${presetLabel} · ${modelLabel}` : "Mock · 本地演示";
-  privacyNoteText.textContent = configured
-    ? "临时 Key 不落盘；成功后清空，失败时保留以便重试。"
+  privacyNoteText.textContent = configured && byok
+    ? "你的供应商 Key 只用于本次审计；成功后清空，失败时保留以便重试，但仅留在当前页面。"
+    : configured
+      ? "使用服务端 Key；浏览器不会接触供应商密钥。"
     : "Mock 在本地运行，不发送 API Key。";
+  apiKey.disabled = !configured || !byok || !transientProviderConfigAllowed;
+  [baseUrl, model, providerPreset].forEach((field) => {
+    field.disabled = !configured || !byok || !transientProviderConfigAllowed;
+  });
 }
 
 function applyPreset() {
@@ -165,7 +175,7 @@ function openProviderSettings(selectProvider = false) {
   if (selectProvider) provider.value = "openai-compatible";
   updateProviderHint();
   if (!providerSettings.open) providerSettings.showModal();
-  window.setTimeout(() => apiKey.focus(), 0);
+  window.setTimeout(() => (credentialMode.value === "byok" ? apiKey : credentialMode).focus(), 0);
 }
 
 function explainError(message) {
@@ -403,10 +413,11 @@ async function runAudit() {
       body: JSON.stringify({
         text,
         provider: provider.value,
+        credential_mode: provider.value === "openai-compatible" ? credentialMode.value : null,
         include_alternatives: includeAlternatives.checked,
-        api_key: provider.value === "openai-compatible" && transientProviderConfigAllowed ? (apiKey.value.trim() || null) : null,
-        base_url: provider.value === "openai-compatible" && transientProviderConfigAllowed ? (baseUrl.value.trim() || null) : null,
-        model: provider.value === "openai-compatible" && transientProviderConfigAllowed ? (model.value.trim() || null) : null,
+        api_key: provider.value === "openai-compatible" && credentialMode.value === "byok" && transientProviderConfigAllowed ? (apiKey.value.trim() || null) : null,
+        base_url: provider.value === "openai-compatible" && credentialMode.value === "byok" && transientProviderConfigAllowed ? (baseUrl.value.trim() || null) : null,
+        model: provider.value === "openai-compatible" && credentialMode.value === "byok" && transientProviderConfigAllowed ? (model.value.trim() || null) : null,
         timeout: Number(timeout.value || 60),
       }),
     });
@@ -463,9 +474,13 @@ provider.addEventListener("change", () => {
     apiKey.value = "";
     delete apiKey.dataset.retry;
   }
-  if (provider.value === "openai-compatible" && !baseUrl.value.trim()) openProviderSettings(false);
+  if (provider.value === "openai-compatible" && credentialMode.value === "byok" && !baseUrl.value.trim()) openProviderSettings(false);
 });
 providerPreset.addEventListener("change", applyPreset);
+credentialMode.addEventListener("change", () => {
+  if (credentialMode.value === "server") apiKey.value = "";
+  updateProviderHint();
+});
 model.addEventListener("input", updateProviderHint);
 baseUrl.addEventListener("input", updateProviderHint);
 providerSettings.addEventListener("click", (event) => {
@@ -495,7 +510,8 @@ fetch("/api/health")
     const remoteOption = provider.querySelector('option[value="openai-compatible"]');
     if (remoteOption) remoteOption.disabled = !transientProviderConfigAllowed && !data.openai_configured;
     if (provider.value === "openai-compatible" && remoteOption?.disabled) provider.value = "mock";
-    [apiKey, baseUrl, model, providerPreset].forEach((field) => { field.disabled = !transientProviderConfigAllowed; });
+    credentialMode.querySelector('option[value="byok"]').disabled = !data.byok_allowed;
+    credentialMode.disabled = !data.openai_configured && !data.byok_allowed;
     if (!transientProviderConfigAllowed) apiKey.value = "";
     accessToken.placeholder = accessTokenRequired
       ? "必填：服务端设置的 AUDITOR_ACCESS_TOKEN"

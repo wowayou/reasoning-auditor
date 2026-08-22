@@ -55,6 +55,8 @@ def test_web_static_assets_and_index_exist() -> None:
     assert "RA 访问令牌" in index
     assert "X-Auditor-Token" in js
     assert "access_token_required" in js
+    assert "本次使用我的 Key（BYOK）" in index
+    assert "credential_mode" in js
 
 
 def test_health_reports_provider_configuration(monkeypatch) -> None:
@@ -63,11 +65,12 @@ def test_health_reports_provider_configuration(monkeypatch) -> None:
 
     assert health() == {
         "status": "ok",
-        "web_build": 11,
+        "web_build": 12,
         "openai_configured": False,
         "openai_defaults": {"base_url_configured": False, "base_url": "", "model": ""},
         "transient_provider_config_allowed": True,
         "access_token_required": False,
+        "byok_allowed": True,
     }
 
 
@@ -79,7 +82,7 @@ def test_health_exposes_non_secret_provider_defaults(monkeypatch) -> None:
 
     assert health() == {
         "status": "ok",
-        "web_build": 11,
+        "web_build": 12,
         "openai_configured": True,
         "openai_defaults": {
             "base_url_configured": True,
@@ -88,6 +91,7 @@ def test_health_exposes_non_secret_provider_defaults(monkeypatch) -> None:
         },
         "transient_provider_config_allowed": True,
         "access_token_required": False,
+        "byok_allowed": True,
     }
 
 
@@ -228,3 +232,72 @@ def test_audit_request_hides_api_key_in_repr() -> None:
     request = AuditRequest(text="观点", api_key="temporary-secret")
 
     assert "temporary-secret" not in repr(request)
+
+
+def test_audit_endpoint_uses_server_configuration_without_browser_fields(monkeypatch) -> None:
+    web_app = importlib.import_module("auditor.web.app")
+    captured: dict[str, object] = {}
+
+    class CapturingProvider(DemoMockProvider):
+        def __init__(self, **kwargs: object) -> None:
+            super().__init__()
+            captured.update(kwargs)
+
+        def close(self) -> None:
+            captured["closed"] = True
+
+    monkeypatch.setattr(web_app, "OpenAICompatibleProvider", CapturingProvider)
+    audit = route_endpoint(web_app.create_app(), "/api/audit")
+
+    payload = audit(
+        web_app.AuditRequest(
+            text="观点",
+            provider="openai-compatible",
+            credential_mode="server",
+            timeout=12,
+        )
+    )
+
+    assert payload["report"]["graph"]["original_text"] == "观点"
+    assert captured == {
+        "api_key": None,
+        "base_url": None,
+        "model": None,
+        "timeout": 12.0,
+        "closed": True,
+    }
+
+
+def test_byok_requires_a_key_and_server_mode_does_not_accept_one() -> None:
+    audit = route_endpoint(create_app(), "/api/audit")
+    with pytest.raises(HTTPException, match="BYOK 模式需要"):
+        audit(AuditRequest(text="观点", provider="openai-compatible", credential_mode="byok"))
+    with pytest.raises(HTTPException, match="服务端 Key 模式"):
+        audit(AuditRequest(text="观点", provider="openai-compatible", credential_mode="server", api_key="secret"))
+    with pytest.raises(HTTPException, match="服务端 Key 模式"):
+        audit(AuditRequest(text="观点", provider="openai-compatible", credential_mode="server", model="client-model"))
+
+
+def test_legacy_api_key_request_is_treated_as_byok(monkeypatch) -> None:
+    web_app = importlib.import_module("auditor.web.app")
+    captured: dict[str, object] = {}
+
+    class CapturingProvider(DemoMockProvider):
+        def __init__(self, **kwargs: object) -> None:
+            super().__init__()
+            captured.update(kwargs)
+
+    monkeypatch.setattr(web_app, "OpenAICompatibleProvider", CapturingProvider)
+    audit = route_endpoint(web_app.create_app(), "/api/audit")
+
+    audit(
+        web_app.AuditRequest(
+            text="观点",
+            provider="openai-compatible",
+            api_key="temporary-secret",
+            base_url="https://example.test/v1",
+            model="demo-model",
+        )
+    )
+
+    assert captured["api_key"] == "temporary-secret"
