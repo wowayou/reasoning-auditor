@@ -27,7 +27,7 @@
       <section class="input-panel" aria-labelledby="input-title">
         <div class="onboarding" id="onboarding">
           <span class="onboarding-label">首次使用</span>
-          <span>Mock 无需配置；真实模型由本机后端代为请求。它不替你判真伪，而是指出哪里需要验证。</span>
+          <span id="onboarding-copy">本地 Mock 无需配置；真实模型只通过 FastAPI 后端请求。它不替你判真伪，而是指出哪里需要验证。</span>
           <button class="inline-link" id="open-provider-settings" type="button">配置模型</button>
           <button class="icon-button" id="dismiss-onboarding" type="button" aria-label="关闭首次使用提示">×</button>
         </div>
@@ -45,7 +45,7 @@
             <span>Provider</span>
             <select id="provider">
               <option value="mock">Mock（本地演示）</option>
-              <option value="openai-compatible">OpenAI-Compatible（后端代理）</option>
+              <option value="openai-compatible">OpenAI-Compatible（FastAPI 后端代理）</option>
             </select>
           </label>
           <div class="analysis-option">
@@ -92,7 +92,7 @@
           <div><p class="section-kicker">PROVIDER</p><h2>配置 AI 模型</h2></div>
           <button class="dialog-close" id="close-provider-settings" type="button" aria-label="关闭模型设置">×</button>
         </div>
-          <div class="provider-help" id="config-hint">请求由本机后端转发到供应商。Key 只在本次请求的内存生命周期内使用，不写入浏览器存储、任务状态或报告。</div>
+          <div class="provider-help" id="config-hint">FastAPI 后端模式：Mock 不需要 Key；真实模型由后端转发到供应商。供应商 Key 不写入浏览器存储、任务状态或报告。</div>
           <label>
             <span>常用供应商</span>
             <select id="provider-preset">

@@ -118,7 +118,7 @@ def create_app() -> FastAPI:
         if mode == "byok":
             if not allow_transient_provider_config:
                 raise ValueError(
-                    "BYOK 已关闭（临时 Provider 配置已关闭）；请切换到服务端 Key，"
+                    "BYOK 已关闭（用户供应商 API Key 转发已关闭）；请切换到服务端 Key，"
                     "或在部署中开启 AUDITOR_ALLOW_TRANSIENT_PROVIDER_CONFIG"
                 )
             if not request.api_key:

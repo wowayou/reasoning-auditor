@@ -51,13 +51,15 @@ def test_web_static_assets_and_index_exist() -> None:
     assert "先看最影响结论的一步" in js
     assert "优先验证这个声明" in js
     assert "transient_provider_config_allowed" in js
-    assert "Key 只在本次请求的内存生命周期内使用" in index
+    assert "供应商 Key 不写入浏览器存储、任务状态或报告" in index
     assert "RA 访问令牌" in index
     assert "X-Auditor-Token" in js
     assert "access_token_required" in js
     assert "本次使用我的 Key（BYOK）" in index
     assert "credential_mode" in js
     assert "static/demo-report.json" in js
+    assert "FastAPI 后端" in index
+    assert "GitHub Pages 静态演示" in js
 
 
 def test_health_reports_provider_configuration(monkeypatch) -> None:
@@ -172,7 +174,7 @@ def test_public_mode_rejects_transient_provider_configuration(monkeypatch) -> No
     audit = route_endpoint(web_app, "/api/audit")
 
     assert health()["transient_provider_config_allowed"] is False
-    with pytest.raises(HTTPException, match="临时 Provider 配置已关闭"):
+    with pytest.raises(HTTPException, match="用户供应商 API Key 转发已关闭"):
         audit(
             AuditRequest(
                 text="观点",

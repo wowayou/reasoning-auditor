@@ -18,6 +18,7 @@ const markdownSource = document.querySelector("#markdown-source");
 const jsonView = document.querySelector("#json-view");
 const jsonTree = document.querySelector("#json-tree");
 const onboarding = document.querySelector("#onboarding");
+const onboardingCopy = document.querySelector("#onboarding-copy");
 const providerSettings = document.querySelector("#provider-settings");
 const apiKey = document.querySelector("#api-key");
 const credentialMode = document.querySelector("#credential-mode");
@@ -147,6 +148,7 @@ function activateStaticDemo() {
   baseUrl.disabled = true;
   model.disabled = true;
   providerPreset.disabled = true;
+  onboardingCopy.textContent = "GitHub Pages 静态演示只运行浏览器内置 Mock；真实模型需要部署并启动 FastAPI 后端。";
   configHint.textContent = "GitHub Pages 静态演示：只运行浏览器内置 Mock，不发送观点或 API Key。真实模型需要启动 FastAPI 服务。";
   privacyNoteText.textContent = "静态 Mock 在浏览器本地运行，不发送 API Key。";
   providerSummaryText.textContent = "Mock · GitHub Pages 静态演示";
@@ -184,7 +186,7 @@ function updateProviderHint() {
   configHint.textContent = configured
     ? (byok
       ? (transientProviderConfigAllowed
-        ? "BYOK：使用你自己的供应商 Key。本次请求由本机后端转发，Key 不写入存储、任务状态或报告。"
+        ? "BYOK：使用你自己的供应商 Key。本次请求由 FastAPI 后端转发，Key 不写入存储、任务状态或报告。"
         : "当前部署已关闭 BYOK，请切换到服务端 Key。")
       : "服务端 Key：浏览器不会发送供应商 API Key，由服务启动环境变量提供。")
     : "Mock 完全离线运行，不需要 API Key。";
@@ -230,7 +232,7 @@ function explainError(message) {
     return "模型返回了无法识别的声明结构。系统已兼容常见字段并自动请求一次格式修复，但仍未通过严格校验；请重试或换用更稳定的 JSON 模型。";
   }
   if (text.includes("OPENAI_API_KEY is required")) {
-    return "没有找到 API Key。请在 Provider 设置中填写临时 Key，或在启动 Web 服务的终端设置 OPENAI_API_KEY。";
+    return "FastAPI 后端没有找到供应商 API Key。请在受信任环境中使用 BYOK，或在启动服务的环境变量中设置 OPENAI_API_KEY。GitHub Pages 静态版不支持真实模型。";
   }
   if (text.includes("需要有效的 RA 访问令牌")) {
     return "此服务启用了 RA 访问令牌。请填写部署者提供的 RA 访问令牌；它与供应商 API Key 是两套不同凭据。";

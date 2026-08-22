@@ -26,6 +26,16 @@ AI 最容易误导人的地方，不是完全错误，而是把一个局部正�
 
 当前不包含搜索、证据抓取、多模型或任何 Agent Framework。
 
+## 运行模式口径
+
+项目有三种明确运行模式：
+
+- **GitHub Pages 静态演示**：只运行浏览器内置 Mock。它不连接真实模型、不发送观点、不接收供应商 API Key，适合产品演示和 UI 验收。
+- **FastAPI 本地/服务器模式**：运行 `auditor-web`，可使用 Mock 或 OpenAI-Compatible Provider。真实模型请求由 FastAPI 后端发起，浏览器不直接连接供应商。
+- **FastAPI BYOK 模式**：在受信任的 FastAPI 部署中临时提交用户自己的供应商 API Key。Key 只用于当前请求；公共部署默认关闭此模式。
+
+这里的“供应商 API Key”指 OpenAI、DeepSeek、OpenRouter 等模型供应商的调用凭据；`AUDITOR_ACCESS_TOKEN` 只用于保护 RA 自身接口，两者不是同一个东西。
+
 ## 环境
 
 - Python 3.12+
@@ -79,7 +89,7 @@ Provider 使用 Chat Completions 的 `POST /chat/completions` 协议，并对响
 
 浏览器打开 `http://127.0.0.1:8000`。Web UI 支持：
 
-- Mock 或后端代理的 OpenAI-Compatible Provider；浏览器不直接请求供应商，适合有 CORS 或客户端调用限制的供应商；
+- Mock 或 FastAPI 后端代理的 OpenAI-Compatible Provider；浏览器不直接请求供应商，适合有 CORS 或客户端调用限制的供应商；
 - 结构化视图：摘要指标、声明表、推理链和风险阅读；
 - Markdown 视图：适合复制、下载和提交评审；
 - JSON 视图：可折叠数据树，适合 API、自动化和前端集成；
@@ -88,17 +98,17 @@ Provider 使用 Chat Completions 的 `POST /chat/completions` 协议，并对响
 - 声明表格、修辞风险、承重假设、替代解释和验证步骤；
 - 响应式桌面/移动布局。
 
-首次打开页面会看到 Mock 快速上手提示。切换到 OpenAI-Compatible 后，可选择常用供应商预设，或在 Provider 设置中填写 API Key、Base URL、Model 和超时。浏览器只把配置发送给本机 Web API，由后端请求供应商；API Key 不写入浏览器存储、任务状态、报告或服务器文件，成功后清空，失败时仅暂留在当前页面以便修正和重试。生产环境推荐使用启动 Web 服务的终端环境变量 `OPENAI_API_KEY`、`OPENAI_BASE_URL` 和 `OPENAI_MODEL`，这样浏览器无需接触 Key。Base URL 只允许 HTTPS，或 localhost/127.0.0.1/::1 的本机 HTTP 服务。
+首次打开页面会看到 Mock 快速上手提示。FastAPI 后端模式切换到 OpenAI-Compatible 后，可选择常用供应商预设，或配置 API Key、Base URL、Model 和超时。浏览器只把配置发送给 FastAPI 后端，由后端请求供应商；API Key 不写入浏览器存储、任务状态、报告或服务器文件，成功后清空，失败时仅暂留在当前页面以便修正和重试。生产环境推荐使用启动 FastAPI 服务的环境变量 `OPENAI_API_KEY`、`OPENAI_BASE_URL` 和 `OPENAI_MODEL`，这样浏览器无需接触 Key。GitHub Pages 静态模式不会显示真实 Provider 能力，也不支持真实模型。
 
 ### API Key 安全边界
 
 - 真实 Provider 的 API Key 必须由你在所选供应商控制台创建（例如 OpenAI、DeepSeek 或 OpenRouter）；RA 不提供、生成或代管供应商 Key。Mock 模式不需要任何供应商 Key。
-- Web UI 提供两种凭据模式：`服务端 Key` 使用部署环境中的 `OPENAI_API_KEY`；`BYOK`（Bring Your Own Key）使用你本次输入的供应商 Key。BYOK 适合本地或受信任部署，公共部署默认关闭。
-- 临时 Key 只随当前请求发送，服务端只在请求和 Provider 生命周期内使用，不写入数据库、文件、Cookie、localStorage、任务状态或报告。
+- FastAPI Web UI 提供两种凭据模式：`服务端 Key` 使用部署环境中的 `OPENAI_API_KEY`；`BYOK`（Bring Your Own Key）使用你本次输入的供应商 Key。BYOK 只适合本地或受信任部署，公共部署默认关闭；GitHub Pages 静态版不支持这两种真实模型凭据模式。
+- 用户供应商 API Key 只随当前请求发送，FastAPI 后端只在请求和 Provider 生命周期内使用，不写入数据库、文件、Cookie、localStorage、任务状态或报告。
 - 成功后前端立即清空 Key；失败时仅保留当前页面输入，方便修正后重试；切换回 Mock 会立即清空。
 - `/api/health` 只返回是否配置，不返回 Key；HTTP 错误中的供应商回显会做脱敏。
 - Key 会拒绝空白、控制字符和超过 500 个字符的值。服务端环境变量和临时输入使用同一套校验。
-- 本地默认允许临时 Provider 配置；公共部署应设置 `AUDITOR_ALLOW_TRANSIENT_PROVIDER_CONFIG=false`，并只在服务端设置 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`。
+- 本地 FastAPI 默认允许 BYOK；公共部署应设置 `AUDITOR_ALLOW_TRANSIENT_PROVIDER_CONFIG=false`，并只在服务端设置 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`。
 - 公共部署可设置 `AUDITOR_ACCESS_TOKEN` 保护 RA 自身的 API；前端通过 `X-Auditor-Token` 发送它。它不是供应商 API Key，也不会发送给 OpenAI、DeepSeek 或其他模型供应商。
 
 ### Docker / 公共部署
@@ -115,7 +125,7 @@ docker run --rm -p 8000:8000 \
   reasoning-auditor
 ```
 
-镜像默认关闭浏览器临时 Provider 配置，避免把服务变成任意访客可控的远程代理。只在受信任的本机环境中，才考虑显式设置 `AUDITOR_ALLOW_TRANSIENT_PROVIDER_CONFIG=true`。
+镜像默认关闭浏览器 BYOK 转发，避免把服务变成任意访客可控的远程代理。只在受信任的本机或受控服务器环境中，才考虑显式设置 `AUDITOR_ALLOW_TRANSIENT_PROVIDER_CONFIG=true`。
 
 ## 最小示例
 
