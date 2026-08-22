@@ -3,6 +3,7 @@ import importlib
 import time
 
 import pytest
+from fastapi import HTTPException
 
 from auditor.web.app import AuditRequest, STATIC_DIR, create_app
 from auditor.providers import DemoMockProvider
@@ -36,7 +37,7 @@ def test_web_static_assets_and_index_exist() -> None:
     assert "/api/audit" in js
     assert "renderJsonTree" in js
     assert "downloadArtifact" in js
-    assert "失败时保留以便修正或重试" in js
+    assert "失败时保留以便重试" in js
     assert "providerPresets" in js
     assert "/api/audit/jobs" in js
     assert "progress-steps" in index
@@ -49,6 +50,8 @@ def test_web_static_assets_and_index_exist() -> None:
     assert "Mock 在本地运行，不发送 API Key" in js
     assert "先看最影响结论的一步" in js
     assert "优先验证这个声明" in js
+    assert "transient_provider_config_allowed" in js
+    assert "Key 只在本次请求的内存生命周期内使用" in index
 
 
 def test_health_reports_provider_configuration(monkeypatch) -> None:
@@ -57,9 +60,10 @@ def test_health_reports_provider_configuration(monkeypatch) -> None:
 
     assert health() == {
         "status": "ok",
-        "web_build": 9,
+        "web_build": 10,
         "openai_configured": False,
         "openai_defaults": {"base_url_configured": False, "base_url": "", "model": ""},
+        "transient_provider_config_allowed": True,
     }
 
 
@@ -71,13 +75,14 @@ def test_health_exposes_non_secret_provider_defaults(monkeypatch) -> None:
 
     assert health() == {
         "status": "ok",
-        "web_build": 9,
+        "web_build": 10,
         "openai_configured": True,
         "openai_defaults": {
             "base_url_configured": True,
             "base_url": "https://api.example.test/v1",
             "model": "demo-model",
         },
+        "transient_provider_config_allowed": True,
     }
 
 
@@ -137,6 +142,27 @@ def test_audit_request_rejects_empty_and_oversized_text() -> None:
         AuditRequest(text="")
     with pytest.raises(ValueError):
         AuditRequest(text="x" * 100_001)
+    with pytest.raises(ValueError):
+        AuditRequest(text="观点", api_key="x" * 501)
+
+
+def test_public_mode_rejects_transient_provider_configuration(monkeypatch) -> None:
+    monkeypatch.setenv("AUDITOR_ALLOW_TRANSIENT_PROVIDER_CONFIG", "false")
+    web_app = create_app()
+    health = route_endpoint(web_app, "/api/health")
+    audit = route_endpoint(web_app, "/api/audit")
+
+    assert health()["transient_provider_config_allowed"] is False
+    with pytest.raises(HTTPException, match="临时 Provider 配置已关闭"):
+        audit(
+            AuditRequest(
+                text="观点",
+                provider="openai-compatible",
+                api_key="temporary-secret",
+                base_url="https://example.test/v1",
+                model="demo-model",
+            )
+        )
 
 
 def test_audit_endpoint_reports_missing_openai_key(monkeypatch) -> None:
@@ -182,3 +208,9 @@ def test_audit_endpoint_uses_transient_model_configuration(monkeypatch) -> None:
         "timeout": 12.0,
         "closed": True,
     }
+
+
+def test_audit_request_hides_api_key_in_repr() -> None:
+    request = AuditRequest(text="观点", api_key="temporary-secret")
+
+    assert "temporary-secret" not in repr(request)

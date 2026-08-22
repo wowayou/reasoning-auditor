@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 
@@ -25,6 +26,16 @@ def parse_model_json(raw_response: str, expected: str) -> Any:
         if language not in {"", "json"}:
             raise ValueError("provider response uses an unsupported code fence")
         candidate = "\n".join(lines[1:-1]).strip()
+    else:
+        # Accept one JSON fence preceded by a short provider explanation.
+        # Multiple fenced payloads remain invalid rather than guessing.
+        fenced = re.findall(
+            r"```(?:json)?\s*\n?(.*?)```",
+            candidate,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if len(fenced) == 1 and fenced[0].strip():
+            candidate = fenced[0].strip()
 
     try:
         payload = json.loads(candidate)

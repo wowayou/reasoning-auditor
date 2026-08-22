@@ -21,6 +21,18 @@ class ProviderError(RuntimeError):
     """A safe, user-facing error from a model provider."""
 
 
+def _resolve_api_key(value: str | None) -> str:
+    """Normalize a transient or environment API key without exposing it."""
+    candidate = (value if value is not None else os.getenv("OPENAI_API_KEY", "")).strip()
+    if not candidate:
+        raise ValueError("OPENAI_API_KEY is required for the openai provider")
+    if len(candidate) > 500:
+        raise ValueError("API Key is too long")
+    if any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in candidate):
+        raise ValueError("API Key must not contain whitespace or control characters")
+    return candidate
+
+
 class MockProvider:
     """A deterministic provider for local development and tests.
 
@@ -61,9 +73,7 @@ class OpenAICompatibleProvider:
         timeout: float = 60.0,
         client: httpx.Client | None = None,
     ) -> None:
-        resolved_key = api_key or os.getenv("OPENAI_API_KEY")
-        if not resolved_key or not resolved_key.strip():
-            raise ValueError("OPENAI_API_KEY is required for the openai provider")
+        resolved_key = _resolve_api_key(api_key)
         if timeout <= 0:
             raise ValueError("timeout must be greater than zero")
 
@@ -71,8 +81,8 @@ class OpenAICompatibleProvider:
         self.base_url = self._validate_base_url(
             base_url or os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1"
         )
-        self.model = model or os.getenv("OPENAI_MODEL") or "gpt-4o-mini"
-        if not self.model.strip():
+        self.model = (model or os.getenv("OPENAI_MODEL") or "gpt-4o-mini").strip()
+        if not self.model:
             raise ValueError("model must be a non-empty string")
         self.timeout = timeout
         self._client = client or httpx.Client(timeout=timeout)

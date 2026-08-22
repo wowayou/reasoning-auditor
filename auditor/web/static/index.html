@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="AI 观点审计器">
     <title>AI Reasoning Auditor</title>
-    <link rel="stylesheet" href="/static/style.css?v=9">
+    <link rel="stylesheet" href="/static/style.css?v=10">
   </head>
   <body>
     <header class="topbar">
@@ -92,7 +92,7 @@
           <div><p class="section-kicker">PROVIDER</p><h2>配置 AI 模型</h2></div>
           <button class="dialog-close" id="close-provider-settings" type="button" aria-label="关闭模型设置">×</button>
         </div>
-          <div class="provider-help" id="config-hint">请求由本机后端转发到供应商，不会让浏览器直接连接供应商。</div>
+          <div class="provider-help" id="config-hint">请求由本机后端转发到供应商。Key 只在本次请求的内存生命周期内使用，不写入浏览器存储、任务状态或报告。</div>
           <label>
             <span>常用供应商</span>
             <select id="provider-preset">
@@ -170,6 +170,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=9" defer></script>
+    <script src="/static/app.js?v=10" defer></script>
   </body>
 </html>

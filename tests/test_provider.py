@@ -143,6 +143,25 @@ def test_openai_compatible_provider_rejects_missing_key(monkeypatch) -> None:
         OpenAICompatibleProvider()
 
 
+@pytest.mark.parametrize("api_key", ["   ", "key with spaces", "key\nwith-control", "x" * 501])
+def test_openai_compatible_provider_rejects_unsafe_api_keys(api_key: str) -> None:
+    with pytest.raises(ValueError, match="API Key|OPENAI_API_KEY"):
+        OpenAICompatibleProvider(api_key=api_key)
+
+
+def test_openai_compatible_provider_strips_environment_key_and_model(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "  env-secret  ")
+    provider = OpenAICompatibleProvider(model="  demo-model  ", client=httpx.Client(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200, json={"choices": [{"message": {"content": "ok"}}]}
+            )
+        )
+    ))
+    assert provider.api_key == "env-secret"
+    assert provider.model == "demo-model"
+
+
 @pytest.mark.parametrize(
     "base_url",
     [

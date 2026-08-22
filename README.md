@@ -38,6 +38,8 @@ python -m venv .venv
 .venv/bin/pytest
 ```
 
+本地服务端配置可参考 `.env.example`；不要把真实 Key 写入仓库。
+
 ## CLI 验收
 
 安装后可以直接运行默认 Mock Provider：
@@ -86,7 +88,30 @@ Provider 使用 Chat Completions 的 `POST /chat/completions` 协议，并对响
 - 声明表格、修辞风险、承重假设、替代解释和验证步骤；
 - 响应式桌面/移动布局。
 
-首次打开页面会看到 Mock 快速上手提示。切换到 OpenAI-Compatible 后，可选择常用供应商预设，或在 Provider 设置中填写 API Key、Base URL、Model 和超时。浏览器只把配置发送给本机 Web API，由后端请求供应商；API Key 不写入浏览器存储或服务器文件，成功后清空，失败时暂留在当前页面以便修正和重试。生产环境推荐使用启动 Web 服务的终端环境变量 `OPENAI_API_KEY`、`OPENAI_BASE_URL` 和 `OPENAI_MODEL`，这样浏览器无需接触 Key。Base URL 只允许 HTTPS，或 localhost/127.0.0.1/::1 的本机 HTTP 服务。
+首次打开页面会看到 Mock 快速上手提示。切换到 OpenAI-Compatible 后，可选择常用供应商预设，或在 Provider 设置中填写 API Key、Base URL、Model 和超时。浏览器只把配置发送给本机 Web API，由后端请求供应商；API Key 不写入浏览器存储、任务状态、报告或服务器文件，成功后清空，失败时仅暂留在当前页面以便修正和重试。生产环境推荐使用启动 Web 服务的终端环境变量 `OPENAI_API_KEY`、`OPENAI_BASE_URL` 和 `OPENAI_MODEL`，这样浏览器无需接触 Key。Base URL 只允许 HTTPS，或 localhost/127.0.0.1/::1 的本机 HTTP 服务。
+
+### API Key 安全边界
+
+- 临时 Key 只随当前请求发送，服务端只在请求和 Provider 生命周期内使用，不写入数据库、文件、Cookie、localStorage、任务状态或报告。
+- 成功后前端立即清空 Key；失败时仅保留当前页面输入，方便修正后重试；切换回 Mock 会立即清空。
+- `/api/health` 只返回是否配置，不返回 Key；HTTP 错误中的供应商回显会做脱敏。
+- Key 会拒绝空白、控制字符和超过 500 个字符的值。服务端环境变量和临时输入使用同一套校验。
+- 本地默认允许临时 Provider 配置；公共部署应设置 `AUDITOR_ALLOW_TRANSIENT_PROVIDER_CONFIG=false`，并只在服务端设置 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`。
+
+### Docker / 公共部署
+
+仓库包含可直接使用的 `Dockerfile`。平台通常会注入 `PORT`，容器会监听 `0.0.0.0`：
+
+```bash
+docker build -t reasoning-auditor .
+docker run --rm -p 8000:8000 \
+  -e OPENAI_API_KEY="..." \
+  -e OPENAI_BASE_URL="https://api.openai.com/v1" \
+  -e OPENAI_MODEL="gpt-4o-mini" \
+  reasoning-auditor
+```
+
+镜像默认关闭浏览器临时 Provider 配置，避免把服务变成任意访客可控的远程代理。只在受信任的本机环境中，才考虑显式设置 `AUDITOR_ALLOW_TRANSIENT_PROVIDER_CONFIG=true`。
 
 ## 最小示例
 
@@ -134,7 +159,7 @@ print(MarkdownReportRenderer().render(report))
 
 阶段模块只依赖统一的 `Provider.complete(prompt) -> str` 接口，因此可以使用
 `MockProvider` 做确定性测试。Provider 必须返回 JSON：Decompose 返回对象，
-Alternative 返回数组；纯 JSON 和完整的 JSON 代码围栏都可被解析，代码围栏外的散文仍会被拒绝。
+Alternative 返回数组；纯 JSON、完整的 JSON 代码围栏，以及前置一小段说明后包裹的单个 JSON 代码围栏都可被解析；多个 payload 或无法明确定位的散文仍会被拒绝。
 Decompose 会在 Provider 边界兼容少量常见别名：claim 的 `statement`/`text`
 会归一为 `content`，edge 的 `source`/`target` 会归一为
 `from_claim_id`/`to_claim_id`；归一化后仍执行严格 Schema 和图完整性校验。

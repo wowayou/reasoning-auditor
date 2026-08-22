@@ -13,7 +13,7 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 from auditor.pipeline import AuditPipeline
 from auditor.providers import DemoMockProvider, OpenAICompatibleProvider, ProviderError
@@ -21,14 +21,21 @@ from auditor.render import JSONReportRenderer, MarkdownReportRenderer
 
 
 STATIC_DIR = Path(__file__).parent / "static"
-WEB_BUILD = 9
+WEB_BUILD = 10
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 class AuditRequest(BaseModel):
     text: str = Field(min_length=1, max_length=100_000)
     provider: Literal["mock", "openai-compatible"] = "mock"
     include_alternatives: bool = True
-    api_key: str | None = Field(default=None, max_length=500)
+    api_key: SecretStr | None = Field(default=None, max_length=500, repr=False)
     base_url: str | None = Field(default=None, max_length=2_000)
     model: str | None = Field(default=None, max_length=200)
     timeout: float = Field(default=60.0, gt=0, le=300)
@@ -40,6 +47,9 @@ def create_app() -> FastAPI:
     jobs: dict[str, dict[str, object]] = {}
     jobs_lock = Lock()
     executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="audit-job")
+    allow_transient_provider_config = _env_flag(
+        "AUDITOR_ALLOW_TRANSIENT_PROVIDER_CONFIG", True
+    )
 
     stage_labels = {
         "decompose": "拆解声明",
@@ -49,6 +59,14 @@ def create_app() -> FastAPI:
         "verification": "规划验证步骤",
         "report": "生成审计报告",
     }
+
+    def validate_provider_configuration(request: AuditRequest) -> None:
+        if request.provider == "openai-compatible" and not allow_transient_provider_config:
+            if request.api_key or request.base_url or request.model:
+                raise ValueError(
+                    "临时 Provider 配置已关闭；请使用 Mock，或在服务端设置 OPENAI_API_KEY、"
+                    "OPENAI_BASE_URL 和 OPENAI_MODEL"
+                )
 
     def execute_audit(
         request: AuditRequest,
@@ -73,11 +91,13 @@ def create_app() -> FastAPI:
             if on_stage_update is not None:
                 on_stage_update(stages)
 
+        validate_provider_configuration(request)
+
         provider = (
             DemoMockProvider()
             if request.provider == "mock"
             else OpenAICompatibleProvider(
-                api_key=request.api_key,
+                api_key=request.api_key.get_secret_value() if request.api_key else None,
                 base_url=request.base_url,
                 model=request.model,
                 timeout=request.timeout,
@@ -124,6 +144,7 @@ def create_app() -> FastAPI:
                 "base_url": os.getenv("OPENAI_BASE_URL", ""),
                 "model": os.getenv("OPENAI_MODEL", ""),
             },
+            "transient_provider_config_allowed": allow_transient_provider_config,
         }
 
     @app.post("/api/audit")
@@ -181,6 +202,10 @@ def create_app() -> FastAPI:
 
     @app.post("/api/audit/jobs", status_code=202)
     def create_audit_job(request: AuditRequest) -> dict[str, str]:
+        try:
+            validate_provider_configuration(request)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
         job_id = uuid4().hex
         with jobs_lock:
             if len(jobs) >= 100:

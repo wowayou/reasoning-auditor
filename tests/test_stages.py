@@ -65,6 +65,16 @@ def test_decompose_stage_accepts_a_complete_json_code_fence() -> None:
     assert len(graph.claims) == 3
 
 
+def test_decompose_stage_accepts_one_json_fence_with_short_preamble() -> None:
+    provider = MockProvider(
+        default_response=f"结果如下：\n```json\n{json.dumps(decomposition_payload())}\n```"
+    )
+
+    graph = DecomposeStage(provider).run("观点")
+
+    assert len(graph.claims) == 3
+
+
 def test_decompose_stage_normalizes_statement_source_target_aliases() -> None:
     payload = {
         "compressed_view": "SEO 被外推为失效，因此建议转向 ABM。",

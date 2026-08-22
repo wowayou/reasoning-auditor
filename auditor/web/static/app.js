@@ -29,7 +29,8 @@ const characterCount = document.querySelector("#character-count");
 const providerSummaryText = document.querySelector("#provider-summary-text");
 const privacyNoteText = document.querySelector("#privacy-note-text");
 let latestArtifacts = { markdown: "", json: "" };
-const EXPECTED_WEB_BUILD = 9;
+const EXPECTED_WEB_BUILD = 10;
+let transientProviderConfigAllowed = true;
 let progressTimer = null;
 let progressStarted = 0;
 let progressIndex = 0;
@@ -135,7 +136,9 @@ const providerPresets = {
 function updateProviderHint() {
   const configured = provider.value === "openai-compatible";
   configHint.textContent = configured
-    ? "请求由本机后端转发到供应商，不会让浏览器直接连接供应商。Key 仅用于本次请求；成功后清空，失败时保留以便修正或重试。"
+    ? (transientProviderConfigAllowed
+      ? "请求由本机后端转发到供应商。Key 只在本次请求的内存生命周期内使用；成功后清空，失败时保留以便重试。"
+      : "当前服务已关闭浏览器临时 Provider 配置，请在服务端设置 OPENAI_API_KEY、OPENAI_BASE_URL 和 OPENAI_MODEL。")
     : "Mock 完全离线运行，不需要 API Key。";
   const presetLabel = providerPreset.options[providerPreset.selectedIndex]?.text || "自定义";
   const modelLabel = model.value.trim() || model.placeholder || "未指定模型";
@@ -391,9 +394,9 @@ async function runAudit() {
         text,
         provider: provider.value,
         include_alternatives: includeAlternatives.checked,
-        api_key: apiKey.value.trim() || null,
-        base_url: baseUrl.value.trim() || null,
-        model: model.value.trim() || null,
+        api_key: provider.value === "openai-compatible" && transientProviderConfigAllowed ? (apiKey.value.trim() || null) : null,
+        base_url: provider.value === "openai-compatible" && transientProviderConfigAllowed ? (baseUrl.value.trim() || null) : null,
+        model: provider.value === "openai-compatible" && transientProviderConfigAllowed ? (model.value.trim() || null) : null,
         timeout: Number(timeout.value || 60),
       }),
     });
@@ -446,6 +449,10 @@ document.querySelector("#save-provider-settings").addEventListener("click", () =
 });
 provider.addEventListener("change", () => {
   updateProviderHint();
+  if (provider.value === "mock") {
+    apiKey.value = "";
+    delete apiKey.dataset.retry;
+  }
   if (provider.value === "openai-compatible" && !baseUrl.value.trim()) openProviderSettings(false);
 });
 providerPreset.addEventListener("change", applyPreset);
@@ -473,6 +480,13 @@ fetch("/api/health")
       const providerState = data.openai_configured ? "Provider 已配置" : "Mock 可用";
       state.querySelector("span:last-child").textContent = `服务在线 · ${providerState} · build ${data.web_build}`;
     }
+    transientProviderConfigAllowed = data.transient_provider_config_allowed !== false;
+    const remoteOption = provider.querySelector('option[value="openai-compatible"]');
+    if (remoteOption) remoteOption.disabled = !transientProviderConfigAllowed && !data.openai_configured;
+    if (provider.value === "openai-compatible" && remoteOption?.disabled) provider.value = "mock";
+    [apiKey, baseUrl, model, providerPreset].forEach((field) => { field.disabled = !transientProviderConfigAllowed; });
+    if (!transientProviderConfigAllowed) apiKey.value = "";
+    updateProviderHint();
     if (data.openai_defaults?.model) model.placeholder = data.openai_defaults.model;
     if (data.openai_defaults?.base_url && !baseUrl.value) baseUrl.value = data.openai_defaults.base_url;
   })
