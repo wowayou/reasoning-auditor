@@ -57,6 +57,7 @@ def test_web_static_assets_and_index_exist() -> None:
     assert "access_token_required" in js
     assert "本次使用我的 Key（BYOK）" in index
     assert "credential_mode" in js
+    assert "static/demo-report.json" in js
 
 
 def test_health_reports_provider_configuration(monkeypatch) -> None:
@@ -65,7 +66,7 @@ def test_health_reports_provider_configuration(monkeypatch) -> None:
 
     assert health() == {
         "status": "ok",
-        "web_build": 12,
+        "web_build": 13,
         "openai_configured": False,
         "openai_defaults": {"base_url_configured": False, "base_url": "", "model": ""},
         "transient_provider_config_allowed": True,
@@ -82,7 +83,7 @@ def test_health_exposes_non_secret_provider_defaults(monkeypatch) -> None:
 
     assert health() == {
         "status": "ok",
-        "web_build": 12,
+        "web_build": 13,
         "openai_configured": True,
         "openai_defaults": {
             "base_url_configured": True,

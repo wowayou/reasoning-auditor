@@ -31,9 +31,10 @@ const characterCount = document.querySelector("#character-count");
 const providerSummaryText = document.querySelector("#provider-summary-text");
 const privacyNoteText = document.querySelector("#privacy-note-text");
 let latestArtifacts = { markdown: "", json: "" };
-const EXPECTED_WEB_BUILD = 12;
+const EXPECTED_WEB_BUILD = 13;
 let transientProviderConfigAllowed = true;
 let accessTokenRequired = false;
+let staticDemoMode = false;
 let progressTimer = null;
 let progressStarted = 0;
 let progressIndex = 0;
@@ -109,7 +110,7 @@ function updateProgressFromJob(job) {
 async function pollAuditJob(jobId) {
   const deadline = Date.now() + 5 * 60 * 1000;
   while (Date.now() < deadline) {
-    const response = await fetch(`/api/audit/jobs/${encodeURIComponent(jobId)}`, {
+    const response = await fetch(`api/audit/jobs/${encodeURIComponent(jobId)}`, {
       headers: accessToken.value.trim() ? { "X-Auditor-Token": accessToken.value.trim() } : {},
     });
     const job = await response.json();
@@ -120,6 +121,39 @@ async function pollAuditJob(jobId) {
     await new Promise((resolve) => window.setTimeout(resolve, 250));
   }
   throw new Error("审计等待超过 5 分钟，请检查 Provider 或重新尝试。");
+}
+
+async function runStaticDemo(text, includeAlternative) {
+  const response = await fetch("static/demo-report.json", { cache: "no-store" });
+  if (!response.ok) throw new Error("静态演示数据加载失败");
+  const fixture = await response.json();
+  const result = includeAlternative ? fixture.with_alternatives : fixture.without_alternatives;
+  const report = JSON.parse(JSON.stringify(result.report));
+  report.graph.original_text = text;
+  const markdown = result.markdown.replaceAll(result.report.graph.original_text, text);
+  return { ...result, report, markdown, json: JSON.stringify(report, null, 2) };
+}
+
+function activateStaticDemo() {
+  staticDemoMode = true;
+  transientProviderConfigAllowed = false;
+  accessTokenRequired = false;
+  provider.value = "mock";
+  const remoteOption = provider.querySelector('option[value="openai-compatible"]');
+  if (remoteOption) remoteOption.disabled = true;
+  apiKey.value = "";
+  apiKey.disabled = true;
+  credentialMode.disabled = true;
+  baseUrl.disabled = true;
+  model.disabled = true;
+  providerPreset.disabled = true;
+  configHint.textContent = "GitHub Pages 静态演示：只运行浏览器内置 Mock，不发送观点或 API Key。真实模型需要启动 FastAPI 服务。";
+  privacyNoteText.textContent = "静态 Mock 在浏览器本地运行，不发送 API Key。";
+  providerSummaryText.textContent = "Mock · GitHub Pages 静态演示";
+  const state = document.querySelector("#service-state");
+  state.querySelector(".state-dot").classList.add("is-ready");
+  state.querySelector("span:last-child").textContent = "GitHub Pages · 静态 Mock";
+  updateProviderHint();
 }
 
 function failProgress() {
@@ -141,6 +175,12 @@ const providerPresets = {
 function updateProviderHint() {
   const configured = provider.value === "openai-compatible";
   const byok = credentialMode.value === "byok";
+  if (staticDemoMode) {
+    configHint.textContent = "GitHub Pages 静态演示：只运行浏览器内置 Mock，不发送观点或 API Key。真实模型需要启动 FastAPI 服务。";
+    privacyNoteText.textContent = "静态 Mock 在浏览器本地运行，不发送 API Key。";
+    providerSummaryText.textContent = "Mock · GitHub Pages 静态演示";
+    return;
+  }
   configHint.textContent = configured
     ? (byok
       ? (transientProviderConfigAllowed
@@ -404,6 +444,22 @@ async function runAudit() {
   auditButton.disabled = true;
   startProgress(includeAlternatives.checked);
   try {
+    if (staticDemoMode) {
+      for (let index = 0; index < progressStageList.length; index += 1) {
+        progressIndex = index;
+        renderProgress();
+        await new Promise((resolve) => window.setTimeout(resolve, 80));
+      }
+      const result = await runStaticDemo(text, includeAlternatives.checked);
+      renderStructured(result.report);
+      latestArtifacts = { markdown: result.markdown, json: result.json };
+      markdownSource.textContent = result.markdown;
+      renderJsonTree(result.json);
+      reportStatus.textContent = `静态演示完成 · ${result.report.graph.claims.length} 条声明`;
+      finishProgress(result.stages, result.duration_ms);
+      setView("structured");
+      return;
+    }
     const response = await fetch("/api/audit/jobs", {
       method: "POST",
       headers: {
@@ -493,7 +549,12 @@ document.querySelectorAll("[data-download]").forEach((button) => button.addEvent
 document.querySelectorAll("[data-copy]").forEach((button) => button.addEventListener("click", () => copyArtifact(button.dataset.copy, button)));
 document.querySelectorAll(".view-tab").forEach((tab) => tab.addEventListener("click", () => setView(tab.dataset.view)));
 
-fetch("/api/health")
+const declaredStaticMode = document.querySelector('meta[name="auditor-mode"]')?.content === "static-mock";
+const healthRequest = declaredStaticMode || window.location.protocol === "file:"
+  ? Promise.reject(new Error("static file"))
+  : fetch("api/health");
+
+healthRequest
   .then((response) => response.json())
   .then((data) => {
     const state = document.querySelector("#service-state");
@@ -521,6 +582,10 @@ fetch("/api/health")
     if (data.openai_defaults?.base_url && !baseUrl.value) baseUrl.value = data.openai_defaults.base_url;
   })
   .catch(() => {
+    if (declaredStaticMode || window.location.protocol === "file:") {
+      activateStaticDemo();
+      return;
+    }
     const state = document.querySelector("#service-state");
     state.querySelector(".state-dot").classList.add("is-error");
     state.querySelector("span:last-child").textContent = "服务不可用";

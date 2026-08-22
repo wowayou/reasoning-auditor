@@ -23,7 +23,7 @@ from auditor.render import JSONReportRenderer, MarkdownReportRenderer
 
 
 STATIC_DIR = Path(__file__).parent / "static"
-WEB_BUILD = 12
+WEB_BUILD = 13
 
 
 def _env_flag(name: str, default: bool) -> bool:
