@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import secrets
+from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 from time import perf_counter
 from threading import Lock
@@ -11,7 +13,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, SecretStr
 
@@ -21,7 +23,7 @@ from auditor.render import JSONReportRenderer, MarkdownReportRenderer
 
 
 STATIC_DIR = Path(__file__).parent / "static"
-WEB_BUILD = 10
+WEB_BUILD = 11
 
 
 def _env_flag(name: str, default: bool) -> bool:
@@ -29,6 +31,14 @@ def _env_flag(name: str, default: bool) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_int(name: str, default: int, *, minimum: int, maximum: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+    return max(minimum, min(value, maximum))
 
 
 class AuditRequest(BaseModel):
@@ -50,6 +60,41 @@ def create_app() -> FastAPI:
     allow_transient_provider_config = _env_flag(
         "AUDITOR_ALLOW_TRANSIENT_PROVIDER_CONFIG", True
     )
+    access_token = os.getenv("AUDITOR_ACCESS_TOKEN", "").strip()
+    rate_limit_per_minute = _env_int(
+        "AUDITOR_RATE_LIMIT_PER_MINUTE", 30, minimum=1, maximum=600
+    )
+    max_request_bytes = _env_int(
+        "AUDITOR_MAX_REQUEST_BYTES", 1_500_000, minimum=16_384, maximum=10_000_000
+    )
+    request_times: dict[str, deque[float]] = defaultdict(deque)
+    rate_lock = Lock()
+
+    @app.middleware("http")
+    async def protect_api(request, call_next):
+        if request.url.path.startswith("/api/audit"):
+            if access_token and not secrets.compare_digest(
+                request.headers.get("x-auditor-token", ""), access_token
+            ):
+                return JSONResponse({"detail": "需要有效的 RA 访问令牌"}, status_code=401)
+            if request.method == "POST":
+                content_length = request.headers.get("content-length")
+                if content_length and content_length.isdigit() and int(content_length) > max_request_bytes:
+                    return JSONResponse({"detail": "请求体过大"}, status_code=413)
+                now = perf_counter()
+                client_ip = request.client.host if request.client else "unknown"
+                with rate_lock:
+                    timestamps = request_times[client_ip]
+                    while timestamps and now - timestamps[0] >= 60:
+                        timestamps.popleft()
+                    if len(timestamps) >= rate_limit_per_minute:
+                        return JSONResponse(
+                            {"detail": "请求过于频繁，请稍后再试"},
+                            status_code=429,
+                            headers={"Retry-After": "60"},
+                        )
+                    timestamps.append(now)
+        return await call_next(request)
 
     stage_labels = {
         "decompose": "拆解声明",
@@ -145,6 +190,7 @@ def create_app() -> FastAPI:
                 "model": os.getenv("OPENAI_MODEL", ""),
             },
             "transient_provider_config_allowed": allow_transient_provider_config,
+            "access_token_required": bool(access_token),
         }
 
     @app.post("/api/audit")

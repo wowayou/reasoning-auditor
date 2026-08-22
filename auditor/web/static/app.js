@@ -20,6 +20,7 @@ const jsonTree = document.querySelector("#json-tree");
 const onboarding = document.querySelector("#onboarding");
 const providerSettings = document.querySelector("#provider-settings");
 const apiKey = document.querySelector("#api-key");
+const accessToken = document.querySelector("#access-token");
 const baseUrl = document.querySelector("#base-url");
 const model = document.querySelector("#model");
 const timeout = document.querySelector("#timeout");
@@ -29,8 +30,9 @@ const characterCount = document.querySelector("#character-count");
 const providerSummaryText = document.querySelector("#provider-summary-text");
 const privacyNoteText = document.querySelector("#privacy-note-text");
 let latestArtifacts = { markdown: "", json: "" };
-const EXPECTED_WEB_BUILD = 10;
+const EXPECTED_WEB_BUILD = 11;
 let transientProviderConfigAllowed = true;
+let accessTokenRequired = false;
 let progressTimer = null;
 let progressStarted = 0;
 let progressIndex = 0;
@@ -106,7 +108,9 @@ function updateProgressFromJob(job) {
 async function pollAuditJob(jobId) {
   const deadline = Date.now() + 5 * 60 * 1000;
   while (Date.now() < deadline) {
-    const response = await fetch(`/api/audit/jobs/${encodeURIComponent(jobId)}`);
+    const response = await fetch(`/api/audit/jobs/${encodeURIComponent(jobId)}`, {
+      headers: accessToken.value.trim() ? { "X-Auditor-Token": accessToken.value.trim() } : {},
+    });
     const job = await response.json();
     if (!response.ok) throw new Error(job.detail || "无法读取审计状态");
     updateProgressFromJob(job);
@@ -177,6 +181,9 @@ function explainError(message) {
   }
   if (text.includes("OPENAI_API_KEY is required")) {
     return "没有找到 API Key。请在 Provider 设置中填写临时 Key，或在启动 Web 服务的终端设置 OPENAI_API_KEY。";
+  }
+  if (text.includes("需要有效的 RA 访问令牌")) {
+    return "此服务启用了 RA 访问令牌。请填写部署者提供的 RA 访问令牌；它与供应商 API Key 是两套不同凭据。";
   }
   if (text.includes("HTTP 401")) return `${text} 若供应商限制客户端调用，请确认 Key、模型和账号属于同一供应商，并从该供应商控制台复制 API 根地址。`;
   if (text.includes("HTTP 403")) return `${text} 这通常是模型权限、区域限制或账号配额问题。`;
@@ -389,7 +396,10 @@ async function runAudit() {
   try {
     const response = await fetch("/api/audit/jobs", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(accessToken.value.trim() ? { "X-Auditor-Token": accessToken.value.trim() } : {}),
+      },
       body: JSON.stringify({
         text,
         provider: provider.value,
@@ -481,11 +491,15 @@ fetch("/api/health")
       state.querySelector("span:last-child").textContent = `服务在线 · ${providerState} · build ${data.web_build}`;
     }
     transientProviderConfigAllowed = data.transient_provider_config_allowed !== false;
+    accessTokenRequired = data.access_token_required === true;
     const remoteOption = provider.querySelector('option[value="openai-compatible"]');
     if (remoteOption) remoteOption.disabled = !transientProviderConfigAllowed && !data.openai_configured;
     if (provider.value === "openai-compatible" && remoteOption?.disabled) provider.value = "mock";
     [apiKey, baseUrl, model, providerPreset].forEach((field) => { field.disabled = !transientProviderConfigAllowed; });
     if (!transientProviderConfigAllowed) apiKey.value = "";
+    accessToken.placeholder = accessTokenRequired
+      ? "必填：服务端设置的 AUDITOR_ACCESS_TOKEN"
+      : "服务端设置 AUDITOR_ACCESS_TOKEN 时填写";
     updateProviderHint();
     if (data.openai_defaults?.model) model.placeholder = data.openai_defaults.model;
     if (data.openai_defaults?.base_url && !baseUrl.value) baseUrl.value = data.openai_defaults.base_url;

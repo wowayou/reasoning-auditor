@@ -52,6 +52,9 @@ def test_web_static_assets_and_index_exist() -> None:
     assert "优先验证这个声明" in js
     assert "transient_provider_config_allowed" in js
     assert "Key 只在本次请求的内存生命周期内使用" in index
+    assert "RA 访问令牌" in index
+    assert "X-Auditor-Token" in js
+    assert "access_token_required" in js
 
 
 def test_health_reports_provider_configuration(monkeypatch) -> None:
@@ -60,10 +63,11 @@ def test_health_reports_provider_configuration(monkeypatch) -> None:
 
     assert health() == {
         "status": "ok",
-        "web_build": 10,
+        "web_build": 11,
         "openai_configured": False,
         "openai_defaults": {"base_url_configured": False, "base_url": "", "model": ""},
         "transient_provider_config_allowed": True,
+        "access_token_required": False,
     }
 
 
@@ -75,7 +79,7 @@ def test_health_exposes_non_secret_provider_defaults(monkeypatch) -> None:
 
     assert health() == {
         "status": "ok",
-        "web_build": 10,
+        "web_build": 11,
         "openai_configured": True,
         "openai_defaults": {
             "base_url_configured": True,
@@ -83,8 +87,18 @@ def test_health_exposes_non_secret_provider_defaults(monkeypatch) -> None:
             "model": "demo-model",
         },
         "transient_provider_config_allowed": True,
+        "access_token_required": False,
     }
 
+
+def test_access_token_protects_audit_api(monkeypatch) -> None:
+    monkeypatch.setenv("AUDITOR_ACCESS_TOKEN", "ra-secret")
+    web_app = create_app()
+    health = route_endpoint(web_app, "/api/health")
+    audit = route_endpoint(web_app, "/api/audit")
+
+    assert health()["access_token_required"] is True
+    assert audit(AuditRequest(text="观点", provider="mock"))["report"]
 
 def test_audit_endpoint_returns_structured_markdown_and_json() -> None:
     audit = route_endpoint(create_app(), "/api/audit")

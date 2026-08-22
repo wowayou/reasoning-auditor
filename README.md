@@ -92,11 +92,13 @@ Provider 使用 Chat Completions 的 `POST /chat/completions` 协议，并对响
 
 ### API Key 安全边界
 
+- 真实 Provider 的 API Key 必须由你在所选供应商控制台创建（例如 OpenAI、DeepSeek 或 OpenRouter）；RA 不提供、生成或代管供应商 Key。Mock 模式不需要任何供应商 Key。
 - 临时 Key 只随当前请求发送，服务端只在请求和 Provider 生命周期内使用，不写入数据库、文件、Cookie、localStorage、任务状态或报告。
 - 成功后前端立即清空 Key；失败时仅保留当前页面输入，方便修正后重试；切换回 Mock 会立即清空。
 - `/api/health` 只返回是否配置，不返回 Key；HTTP 错误中的供应商回显会做脱敏。
 - Key 会拒绝空白、控制字符和超过 500 个字符的值。服务端环境变量和临时输入使用同一套校验。
 - 本地默认允许临时 Provider 配置；公共部署应设置 `AUDITOR_ALLOW_TRANSIENT_PROVIDER_CONFIG=false`，并只在服务端设置 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`。
+- 公共部署可设置 `AUDITOR_ACCESS_TOKEN` 保护 RA 自身的 API；前端通过 `X-Auditor-Token` 发送它。它不是供应商 API Key，也不会发送给 OpenAI、DeepSeek 或其他模型供应商。
 
 ### Docker / 公共部署
 
@@ -108,6 +110,7 @@ docker run --rm -p 8000:8000 \
   -e OPENAI_API_KEY="..." \
   -e OPENAI_BASE_URL="https://api.openai.com/v1" \
   -e OPENAI_MODEL="gpt-4o-mini" \
+  -e AUDITOR_ACCESS_TOKEN="change-this-ra-token" \
   reasoning-auditor
 ```
 
